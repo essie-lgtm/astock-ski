@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>A股单板滑雪 · 骑着冲下你套牢的票</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <!-- 顶部 HUD -->
+  <div id="topbar">
+    <div class="hud-left">
+      <div id="hud-name" class="name">加载中…</div>
+      <div class="row">
+        <span id="hud-date" class="date">—</span>
+        <span id="hud-price" class="price">¥—</span>
+        <span id="hud-pct" class="pct">—</span>
+        <span id="hud-pos" class="pos">—</span>
+        <span id="hud-peak" class="pos">—</span>
+      </div>
+    </div>
+    <div class="hud-right">
+      <div class="stat"><b id="hud-score">0</b><span>得分</span></div>
+      <div class="stat"><b id="hud-combo">—</b><span>连击</span></div>
+      <div class="stat"><b id="hud-flips">0</b><span>空翻</span></div>
+      <div class="stat"><b id="hud-speed">0 km/h</b><span>速度</span></div>
+    </div>
+  </div>
+
+  <!-- 进度条 -->
+  <div id="progress-wrap"><div id="hud-progress"></div></div>
+
+  <!-- 中央提示 -->
+  <div id="toast"></div>
+
+  <!-- 屏幕操作提示（验收暴露的硬伤：玩家不知道怎么操作）-->
+  <div id="control-hint"><b>点按</b> 跳　·　空中<b>按住</b> 后空翻　·　<b>R</b> 重开</div>
+
+  <!-- 开始 / 加载遮罩 -->
+  <div id="overlay">
+    <div class="card">
+      <div id="loading">读取赛道数据…</div>
+      <div class="start-body">
+        <canvas id="summary-candle" width="380" height="170"></canvas>
+        <div id="challenge-result"></div>
+        <h1>🏂 A股单板滑雪</h1>
+        <p class="sub">骑着冲下你<b>套牢</b>的那只票 · 华尔街遇上极限单板</p>
+        <div class="pick-label">选一只票开滑 ↓</div>
+        <input id="card-search" type="text" placeholder="🔍 搜代码 / 名称 / 板块…" autocomplete="off" />
+        <div id="card-grid" class="card-grid"></div>
+        <ul class="howto">
+          <li>滑行自动进行，<b>不用管前进</b></li>
+          <li><b>点按</b> 空格 / 屏幕 = 即时跳跃</li>
+          <li>腾空时<b>按住</b> = 后空翻，松手 = 停转回正准备落地</li>
+          <li>板面贴着坡面落地才稳；歪了会摔一下，但会<b>自动爬起</b>继续</li>
+        </ul>
+        <div class="cta">点卡片选票 · 按空格 / 点屏幕 开滑</div>
+        <button id="btn-restart">↻ 再滑一次</button>
+        <div id="switcher">
+          <input id="code-input" list="code-list" placeholder="6位代码换票 如 300308" maxlength="9" autocomplete="off" />
+          <datalist id="code-list"></datalist>
+          <button id="code-go">换票</button>
+        </div>
+        <div class="disclaimer">⚠️ 仅供娱乐 · not financial advice　·　也可用网址 ?code=000687 直接切换</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer-disc">仅供娱乐 · not financial advice</div>
+
+  <script src="js/config.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>

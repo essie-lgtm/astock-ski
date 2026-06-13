@@ -1,0 +1,139 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #070b16;
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+#game { display: block; position: fixed; inset: 0; touch-action: none; }
+
+/* ---------- 顶部 HUD ---------- */
+#topbar { position: fixed; top: 0; left: 0; right: 0; z-index: 5;
+  display: flex; justify-content: space-between; align-items: flex-start;
+  padding: 10px 14px; pointer-events: none;
+  background: linear-gradient(180deg, rgba(5,8,18,0.78), rgba(5,8,18,0)); }
+.hud-left .name { font-size: 13px; font-weight: 600; color: #cfe0ff; letter-spacing: .3px; }
+.hud-left .row { margin-top: 4px; display: flex; gap: 10px; align-items: baseline; font-variant-numeric: tabular-nums; }
+.hud-left .date { font-size: 12px; color: #8aa0c8; }
+.hud-left .price { font-size: 15px; font-weight: 700; color: #fff; }
+.pct, .pos { font-size: 12px; font-weight: 600; color: #9aa6bd; }
+.pct.up, .pos.up { color: #ff5d5d; }     /* A股红涨 */
+.pct.down, .pos.down { color: #1fd17d; }  /* 绿跌 */
+
+.hud-right { display: flex; gap: 14px; }
+.hud-right .stat { text-align: right; line-height: 1.1; }
+.hud-right .stat b { display: block; font-size: 16px; color: #fff; font-variant-numeric: tabular-nums; }
+.hud-right .stat span { font-size: 10px; color: #7d8eae; }
+
+/* ---------- 进度条 ---------- */
+#progress-wrap { position: fixed; bottom: 0; left: 0; right: 0; height: 4px;
+  background: rgba(255,255,255,0.08); z-index: 5; }
+#hud-progress { height: 100%; width: 0%;
+  background: linear-gradient(90deg, #5aa0ff, #ffd27f); transition: width .12s linear; }
+
+/* ---------- 中央 toast ---------- */
+#toast { position: fixed; top: 28%; left: 50%;
+  transform: translateX(-50%); z-index: 6; pointer-events: none;
+  font-size: 20px; font-weight: 700; color: #fff; text-align: center;
+  padding: 8px 18px; border-radius: 12px; opacity: 0; transition: opacity .2s;
+  background: rgba(10,16,30,0.0); text-shadow: 0 2px 12px rgba(0,0,0,0.8); max-width: 86%; }
+#toast.show { opacity: 1; }
+#toast.good { color: #ffe28a; }
+#toast.bad { color: #ff7a7a; }
+#toast.finish { color: #8fd0ff; font-size: 17px; background: rgba(10,16,30,0.7); }
+
+/* ---------- 遮罩 / 开始卡片 ---------- */
+#overlay { position: fixed; inset: 0; z-index: 10; display: flex;
+  align-items: center; justify-content: center; padding: 20px;
+  background: rgba(4,7,15,0.55); backdrop-filter: blur(3px); transition: opacity .3s; }
+#overlay.hidden { opacity: 0; pointer-events: none; }
+.card { width: 100%; max-width: 420px; background: rgba(16,22,40,0.92);
+  border: 1px solid rgba(120,150,210,0.25); border-radius: 18px; padding: 26px 24px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5); text-align: center;
+  max-height: 92vh; overflow-y: auto; }
+
+/* ---------- 挑战结果栏（开始页显示目标，结束页显示达成/失败）---------- */
+#challenge-result { display: none; margin: 4px 0 2px; font-size: 13px; font-weight: 700;
+  padding: 7px 10px; border-radius: 10px; }
+#challenge-result.ch-goal { color: #ffd27f; background: rgba(255,210,127,0.08);
+  border: 1px solid rgba(255,210,127,0.25); }
+#challenge-result.ch-win { color: #ffe28a; background: rgba(255,207,58,0.14);
+  border: 1px solid rgba(255,207,58,0.5); }
+#challenge-result.ch-lose { color: #ff9a9a; background: rgba(255,90,90,0.10);
+  border: 1px solid rgba(255,90,90,0.3); }
+
+/* ---------- 首屏选票卡片 ---------- */
+.pick-label { margin: 16px 0 8px; font-size: 13px; font-weight: 600; color: #9fb2d6; }
+#card-search { width: 100%; margin-bottom: 10px; padding: 9px 12px; font-size: 14px;
+  color: #eaf1ff; background: rgba(255,255,255,0.06); border: 1px solid rgba(120,150,210,0.3);
+  border-radius: 10px; outline: none; pointer-events: auto; }
+#card-search::placeholder { color: #7d8eae; }
+.no-result { padding: 16px; font-size: 13px; color: #8aa0c8; }
+.pc-chal { font-size: 11px; color: #ffd27f; margin-top: 2px; }
+.card-grid { display: flex; flex-direction: column; gap: 10px; }
+.pick-card { display: flex; gap: 12px; align-items: stretch; text-align: left;
+  padding: 10px 12px; border-radius: 14px; cursor: pointer; pointer-events: auto;
+  background: rgba(255,255,255,0.04); border: 1.5px solid rgba(120,150,210,0.2);
+  transition: border-color .15s, background .15s, transform .08s; font: inherit; color: inherit; }
+.pick-card:hover { background: rgba(255,255,255,0.08); border-color: rgba(127,209,255,0.5); }
+.pick-card:active { transform: scale(0.985); }
+.pick-card.current { border-color: #7fd1ff; background: rgba(90,160,255,0.12);
+  box-shadow: 0 0 0 1px rgba(127,209,255,0.4) inset; }
+.pick-card .mini { width: 48px; height: 60px; flex: 0 0 auto; align-self: center;
+  border-radius: 8px; background: #0c1322; }
+.pc-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pc-top { display: flex; align-items: baseline; gap: 8px; }
+.pc-name { font-size: 16px; font-weight: 700; color: #fff; }
+.pc-code { font-size: 11px; color: #7d8eae; font-variant-numeric: tabular-nums; }
+.pc-cat { font-size: 11px; color: #8aa0c8; }
+.pc-pers { font-size: 12px; color: #c3d0ea; }
+.pc-badge { font-size: 11px; color: #ffd27f; margin-top: 1px; }
+.pc-badge .stars { color: #ffcf3a; letter-spacing: 1px; }
+.pc-stats { display: flex; gap: 10px; margin-top: 3px; font-size: 12px; font-weight: 700;
+  font-variant-numeric: tabular-nums; }
+.pc-stats .st-up { color: #ff5d5d; }
+.pc-stats .st-down { color: #1fd17d; }
+.pc-stats .st-dd { color: #ff9a9a; font-weight: 600; }
+#loading { color: #9fb2d6; font-size: 14px; line-height: 1.7; }
+#loading code { background: rgba(255,255,255,0.1); padding: 1px 6px; border-radius: 4px; color: #ffd27f; }
+.start-body { display: none; }
+#loading:empty + .start-body, .card .start-body { } /* 控制由JS切换 */
+#summary-candle { display: none; width: 100%; max-width: 340px; height: auto;
+  margin: 0 auto 12px; border-radius: 12px; background: #0c1322;
+  border: 1px solid rgba(120,150,210,0.18); }
+.card h1 { font-size: 26px; color: #fff; }
+.card .sub { margin-top: 8px; font-size: 13px; color: #a8b8d8; }
+.card .sub b { color: #ff7a7a; }
+.howto { list-style: none; text-align: left; margin: 18px auto; max-width: 320px;
+  font-size: 13px; color: #c3d0ea; line-height: 1.9; }
+.howto b { color: #ffd27f; }
+.cta { margin-top: 10px; font-size: 15px; font-weight: 700; color: #5aa0ff;
+  animation: blink 1.3s ease-in-out infinite; }
+@keyframes blink { 50% { opacity: .4; } }
+#btn-restart { display: none; margin: 14px auto 0; padding: 12px 26px; font-size: 16px;
+  font-weight: 700; color: #07101f; background: linear-gradient(90deg,#7fd1ff,#5aa0ff);
+  border: none; border-radius: 12px; cursor: pointer; pointer-events: auto;
+  box-shadow: 0 6px 18px rgba(90,160,255,0.35); }
+#btn-restart:active { transform: scale(0.96); }
+#switcher { margin-top: 14px; display: flex; gap: 8px; justify-content: center; }
+#switcher input { flex: 1; max-width: 220px; padding: 9px 12px; font-size: 14px;
+  color: #eaf1ff; background: rgba(255,255,255,0.07); border: 1px solid rgba(120,150,210,0.3);
+  border-radius: 10px; outline: none; }
+#switcher input::placeholder { color: #7d8eae; }
+#switcher #code-go { padding: 9px 16px; font-size: 14px; font-weight: 700; color: #07101f;
+  background: #9fb6e8; border: none; border-radius: 10px; cursor: pointer; }
+.disclaimer { margin-top: 16px; font-size: 11px; color: #6f80a0; }
+
+/* 屏幕底部操作提示条 */
+#control-hint { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
+  z-index: 5; pointer-events: none; opacity: 0; transition: opacity .4s;
+  font-size: 13px; color: #cfe0ff; letter-spacing: .3px; white-space: nowrap;
+  padding: 7px 16px; border-radius: 20px; background: rgba(12,18,34,0.72);
+  border: 1px solid rgba(120,150,210,0.25); }
+#control-hint b { color: #ffd27f; }
+#control-hint.show { opacity: 0.95; }
+#control-hint.show.dim { opacity: 0.4; }
+
+/* 加载完成后用 JS 隐藏 #loading、显示 .start-body */
+#overlay.ready #loading { display: none; }
+#overlay.ready .start-body { display: block; }
+
+.footer-disc { position: fixed; bottom: 8px; right: 10px; z-index: 5;
+  font-size: 10px; color: rgba(150,165,195,0.5); pointer-events: none; }
