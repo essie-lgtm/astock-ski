@@ -1108,17 +1108,63 @@
     g.fillStyle = col; g.fillRect(cx - bw / 2, Math.min(yo, yc2), bw, Math.max(3, Math.abs(yc2 - yo)));
   }
 
-  // 渲染首屏选票卡片（支持搜索过滤）
+  // 造一张卡片 DOM
+  function buildCard(s) {
+    var st = s.stats || {}, ch = s.challenge;
+    var up = (st.return_pct || 0) >= 0;
+    var stars = '★'.repeat(s.star || 0) + '☆'.repeat(Math.max(0, 5 - (s.star || 0)));
+    var card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'pick-card' + (s.code === currentCode ? ' current' : '') + (s.featured ? ' featured' : '');
+    card.innerHTML =
+      '<canvas class="mini" width="96" height="120"></canvas>' +
+      '<div class="pc-info">' +
+        '<div class="pc-top"><span class="pc-name"></span><span class="pc-code"></span>' +
+          (s.featured ? '<span class="pc-star-tag">⭐精选</span>' : '') + '</div>' +
+        '<div class="pc-cat"></div>' +
+        '<div class="pc-pers"></div>' +
+        '<div class="pc-badge"><span class="stars"></span> <span class="diff"></span></div>' +
+        '<div class="pc-stats"><span class="' + (up ? 'st-up' : 'st-down') + '">本期 ' +
+          (up ? '+' : '') + (st.return_pct != null ? st.return_pct : '—') + '%</span>' +
+          '<span class="st-dd">回撤 ' + (st.max_drawdown_pct != null ? st.max_drawdown_pct : '—') + '%</span></div>' +
+        (ch ? '<div class="pc-chal">🔥 挑战 · <span class="chl"></span></div>' : '') +
+      '</div>';
+    card.querySelector('.pc-name').textContent = s.name || s.code;
+    card.querySelector('.pc-code').textContent = s.code;
+    card.querySelector('.pc-cat').textContent = s.category || '';
+    card.querySelector('.pc-pers').textContent = s.personality || '';
+    card.querySelector('.stars').textContent = stars;
+    card.querySelector('.diff').textContent = s.difficulty || '';
+    if (ch) card.querySelector('.chl').textContent = ch.label || '';
+    drawMiniCandle(card.querySelector('canvas.mini'), st);
+    card.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
+    card.addEventListener('click', function (e) { e.stopPropagation(); selectStock(s.code); });
+    return card;
+  }
+
+  // 渲染首屏选票卡片：默认只铺"精选名场面"，其余大票库靠搜索（最多渲染 CAP 张，避免上百画布卡顿）
+  var CARD_CAP = 80;
   function renderCards() {
     var grid = document.getElementById('card-grid');
     if (!grid || !indexData || !indexData.stocks) return;
     var sb = document.getElementById('card-search');
     var q = (sb && sb.value ? sb.value : '').trim().toLowerCase();
-    var list = indexData.stocks.filter(function (s) {
-      if (!q) return true;
-      return (s.code + ' ' + (s.name || '') + ' ' + (s.category || '') + ' ' + (s.personality || '')).toLowerCase().indexOf(q) >= 0;
-    });
+    var all = indexData.stocks, list, note = '';
+    if (!q) {
+      var featured = all.filter(function (s) { return s.featured; });
+      list = featured.length ? featured : all.slice(0, CARD_CAP);
+      var rest = all.length - list.length;
+      note = '⭐ 精选名场面 · 另有 ' + rest + ' 只大票库，搜索代码/名称/「沪深300」「中证500」查看';
+    } else {
+      var matched = all.filter(function (s) {
+        return (s.code + ' ' + (s.name || '') + ' ' + (s.category || '') + ' ' + (s.personality || '')).toLowerCase().indexOf(q) >= 0;
+      });
+      matched.sort(function (a, b) { return (b.featured ? 1 : 0) - (a.featured ? 1 : 0); });  // 精选优先
+      list = matched.slice(0, CARD_CAP);
+      note = matched.length ? ('找到 ' + matched.length + ' 只' + (matched.length > CARD_CAP ? '（显示前 ' + CARD_CAP + '，再缩小关键词）' : '')) : '';
+    }
     grid.innerHTML = '';
+    if (note) { var nd = document.createElement('div'); nd.className = 'card-note'; nd.textContent = note; grid.appendChild(nd); }
     if (!list.length) {
       var empty = document.createElement('div');
       empty.className = 'no-result';
@@ -1126,38 +1172,7 @@
       grid.appendChild(empty);
       return;
     }
-    list.forEach(function (s) {
-      var st = s.stats || {}, ch = s.challenge;
-      var up = (st.return_pct || 0) >= 0;
-      var stars = '★'.repeat(s.star || 0) + '☆'.repeat(Math.max(0, 5 - (s.star || 0)));
-      var card = document.createElement('button');
-      card.type = 'button';
-      card.className = 'pick-card' + (s.code === currentCode ? ' current' : '');
-      card.innerHTML =
-        '<canvas class="mini" width="96" height="120"></canvas>' +
-        '<div class="pc-info">' +
-          '<div class="pc-top"><span class="pc-name"></span><span class="pc-code"></span></div>' +
-          '<div class="pc-cat"></div>' +
-          '<div class="pc-pers"></div>' +
-          '<div class="pc-badge"><span class="stars"></span> <span class="diff"></span></div>' +
-          '<div class="pc-stats"><span class="' + (up ? 'st-up' : 'st-down') + '">本期 ' +
-            (up ? '+' : '') + (st.return_pct != null ? st.return_pct : '—') + '%</span>' +
-            '<span class="st-dd">回撤 ' + (st.max_drawdown_pct != null ? st.max_drawdown_pct : '—') + '%</span></div>' +
-          (ch ? '<div class="pc-chal">🔥 名场面挑战 · <span class="chl"></span></div>' : '') +
-        '</div>';
-      // 用 textContent 填充，避免数据里的字符破坏 HTML
-      card.querySelector('.pc-name').textContent = s.name || s.code;
-      card.querySelector('.pc-code').textContent = s.code;
-      card.querySelector('.pc-cat').textContent = s.category || '';
-      card.querySelector('.pc-pers').textContent = s.personality || '';
-      card.querySelector('.stars').textContent = stars;
-      card.querySelector('.diff').textContent = s.difficulty || '';
-      if (ch) card.querySelector('.chl').textContent = ch.label || '';
-      drawMiniCandle(card.querySelector('canvas.mini'), st);
-      card.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
-      card.addEventListener('click', function (e) { e.stopPropagation(); selectStock(s.code); });
-      grid.appendChild(card);
-    });
+    list.forEach(function (s) { grid.appendChild(buildCard(s)); });
   }
 
   function setupSwitcher(curCode) {

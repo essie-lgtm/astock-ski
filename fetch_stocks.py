@@ -18,6 +18,7 @@ fetch_stocks.py —— 用 AKShare 把 A 股日线拉成本游戏前端要读的
 import os
 import sys
 import json
+import time
 import argparse
 import datetime as dt
 
@@ -211,14 +212,16 @@ def fetch_one(code: str, meta: dict, start: str, end: str):
     closes = [row[4] for row in rows]
     stats = _compute_stats(rows, closes)
 
+    category, personality, difficulty, star, challenge, featured = resolve_meta(meta, stats)
     payload = {
         "code": code,
         "name": name,
-        "category": meta["category"],
-        "personality": meta["personality"],
-        "difficulty": meta["difficulty"],
-        "star": meta["star"],
-        "challenge": meta.get("challenge"),
+        "category": category,
+        "personality": personality,
+        "difficulty": difficulty,
+        "star": star,
+        "challenge": challenge,
+        "featured": featured,
         "board_limit": board_limit,
         "start": rows[0][0] if rows else None,
         "end": rows[-1][0] if rows else None,
@@ -243,6 +246,8 @@ def _compute_stats(rows, closes):
             max_dd = dd
     limit_up = sum(1 for r in rows if r[6] == 1)
     limit_down = sum(1 for r in rows if r[6] == -1)
+    abspct = [abs(r[5]) for r in rows[1:]]
+    vol = round(sum(abspct) / len(abspct), 2) if abspct else 0.0   # 日均|涨跌|%（波动率）
     return {
         "n": len(rows),
         "min": min(closes),
@@ -251,9 +256,55 @@ def _compute_stats(rows, closes):
         "last": last,
         "return_pct": round((last - first) / first * 100, 2) if first else 0.0,
         "max_drawdown_pct": round(max_dd, 2),
+        "vol": vol,
         "limit_up": limit_up,
         "limit_down": limit_down,
     }
+
+
+# ---------------------------------------------------------------------------
+# 元数据：精选票手工填；成分股大票库按行情自动推断（人设/难度/星级/挑战）
+# ---------------------------------------------------------------------------
+def derive_meta(name, category, stats):
+    v = stats.get("vol", 1.5)                 # 日均波动%
+    dd = stats.get("max_drawdown_pct", 0.0)   # 最大回撤%（≤0）
+    ret = stats.get("return_pct", 0.0)        # 区间涨跌%
+    # 难度星级：波动 + 回撤越大越难
+    if v >= 3.4 or dd <= -55:   star, diff = 5, "地狱"
+    elif v >= 2.6 or dd <= -42: star, diff = 4, "困难"
+    elif v >= 1.9 or dd <= -28: star, diff = 3, "中等"
+    elif v >= 1.4:              star, diff = 2, "进阶"
+    else:                       star, diff = 1, "新手"
+    # 人设（按形态自动起）
+    if ret >= 80 and dd <= -35:        pers = "妖股 · 暴涨暴跌过山车"
+    elif dd <= -45 and ret < 0:        pers = "高位崩盘 · 从云端套牢"
+    elif ret <= -25:                   pers = "阴跌 · 一路套牢"
+    elif ret >= 40:                    pers = "强势 · 陡坡向上"
+    elif v >= 3.0:                     pers = "妖 · 上蹿下跳"
+    elif abs(ret) < 15 and v < 1.6:    pers = "白马 · 缓坡横盘"
+    else:                              pers = "震荡 · 有起有伏"
+    # 挑战（按形态自动派）
+    if dd <= -38 or ret <= -18:
+        ch = {"type": "survive", "label": "活着滑到终点"}
+    elif v >= 2.6:
+        t = int(min(10, max(5, round(v * 2))))
+        ch = {"type": "combo", "label": f"连击 x{t}", "target": t}
+    elif ret >= 35:
+        ch = {"type": "flips", "label": "踩坡空翻 5 次", "target": 5}
+    else:
+        ch = {"type": "score", "label": "得分破 6000", "target": 6000}
+    return {"personality": pers, "difficulty": diff, "star": star, "challenge": ch}
+
+
+def resolve_meta(meta, stats):
+    """返回最终 (category, personality, difficulty, star, challenge, featured)。
+    auto=True 的成分股按行情自动推断；精选票用手填字段。"""
+    if meta.get("auto"):
+        dm = derive_meta(meta["name"], meta.get("category", ""), stats)
+        return (meta.get("category", ""), dm["personality"], dm["difficulty"],
+                dm["star"], dm["challenge"], False)
+    return (meta["category"], meta["personality"], meta["difficulty"],
+            meta["star"], meta.get("challenge"), True)
 
 
 def _fmt(s: str) -> str:
@@ -267,42 +318,84 @@ def write_json(path, obj):
         json.dump(obj, f, ensure_ascii=False, separators=(",", ":"))
 
 
+def _card(payload, stats):
+    return {
+        "code": payload["code"], "name": payload["name"], "category": payload["category"],
+        "personality": payload["personality"], "difficulty": payload["difficulty"],
+        "star": payload["star"], "challenge": payload.get("challenge"),
+        "featured": payload.get("featured", False), "stats": stats,
+    }
+
+
+def _card_from_file(path, meta):
+    """跳过已存在时：读旧数据文件的 stats，按当前 registry 重算卡片元数据（保证精选/自动状态正确）。"""
+    with open(path, encoding="utf-8") as f:
+        p = json.load(f)
+    stats = p.get("stats", {})
+    name = meta.get("name") or p.get("name")        # 名单里的名字优先（修正历史占位名）
+    cat, pers, diff, star, ch, feat = resolve_meta({**meta, "name": name}, stats)
+    return {
+        "code": p["code"], "name": name, "category": cat,
+        "personality": pers, "difficulty": diff, "star": star, "challenge": ch,
+        "featured": feat, "stats": stats,
+    }
+
+
+def build_csi_registry():
+    """精选票(featured) + 沪深300 + 中证500 成分股(auto)。精选优先，不被成分股覆盖。"""
+    reg = {}
+    for code, m in {**STOCKS, **INDEXES}.items():
+        reg[code] = dict(m)
+    for idx_name, sym in [("沪深300", "000300"), ("中证500", "000905")]:
+        try:
+            df = ak.index_stock_cons_csindex(symbol=sym)
+        except Exception as e:
+            print(f"  取 {idx_name} 成分股失败: {e}", file=sys.stderr)
+            continue
+        for _, r in df.iterrows():
+            c = str(r["成分券代码"]).zfill(6)
+            if c in reg:
+                continue                      # 精选优先
+            reg[c] = {"name": str(r["成分券名称"]), "category": idx_name, "auto": True}
+    return reg
+
+
+def _flush_index(index_path, existing):
+    feat = sum(1 for c in existing.values() if c.get("featured"))
+    write_json(index_path, {
+        "meta": {
+            "generated": dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "disclaimer": "仅供娱乐 / not financial advice",
+            "count": len(existing), "featured": feat,
+        },
+        "stocks": list(existing.values()),
+    })
+
+
 def main():
     ap = argparse.ArgumentParser()
     # 默认拉最近约 18 个月（≈340 交易日），赛道长度刚好；想更长就把 --start 往前调
     _default_start = (dt.date.today() - dt.timedelta(days=550)).strftime("%Y%m%d")
     ap.add_argument("--only", help="只拉单只代码，如 300308")
+    ap.add_argument("--csi", action="store_true", help="拉沪深300+中证500大票库（自动元数据）")
+    ap.add_argument("--force", action="store_true", help="已存在的数据也重新拉")
     ap.add_argument("--start", default=_default_start)
     ap.add_argument("--end", default=dt.date.today().strftime("%Y%m%d"))
     args = ap.parse_args()
 
     os.makedirs(DATA_DIR, exist_ok=True)
 
-    registry = {**STOCKS, **INDEXES}
     if args.only:
-        if args.only not in registry:
-            # 允许拉未登记代码，给个占位人设
-            registry = {args.only: {"name": args.only, "category": "未登记",
-                                    "personality": "神秘票", "difficulty": "未知", "star": 3}}
+        base = {**STOCKS, **INDEXES}
+        if args.only in base:
+            registry = {args.only: base[args.only]}
         else:
-            registry = {args.only: registry[args.only]}
+            registry = {args.only: {"name": args.only, "category": "未登记", "auto": True}}
+    elif args.csi:
+        registry = build_csi_registry()
+    else:
+        registry = {**STOCKS, **INDEXES}
 
-    index_cards = []
-    for code, meta in registry.items():
-        try:
-            print(f"[fetch] {code} {meta['name']} ...", flush=True)
-            payload, stats = fetch_one(code, meta, args.start, args.end)
-            write_json(os.path.join(DATA_DIR, f"{code}.json"), payload)
-            index_cards.append({
-                "code": code, "name": meta["name"], "category": meta["category"],
-                "personality": meta["personality"], "difficulty": meta["difficulty"],
-                "star": meta["star"], "challenge": meta.get("challenge"), "stats": stats,
-            })
-            print(f"        ok: {stats['n']} 根K线  涨停{stats.get('limit_up',0)} 跌停{stats.get('limit_down',0)}")
-        except Exception as e:
-            print(f"        FAIL {code}: {e}", file=sys.stderr)
-
-    # 合并/更新 index.json（保留已存在的其它卡片）
     index_path = os.path.join(DATA_DIR, "index.json")
     existing = {}
     if os.path.exists(index_path):
@@ -312,18 +405,43 @@ def main():
                     existing[c["code"]] = c
         except Exception:
             pass
-    for c in index_cards:
-        existing[c["code"]] = c
 
-    write_json(index_path, {
-        "meta": {
-            "generated": dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "disclaimer": "仅供娱乐 / not financial advice",
-            "count": len(existing),
-        },
-        "stocks": list(existing.values()),
-    })
-    print(f"[done] index.json 现有 {len(existing)} 张卡片")
+    total = len(registry)
+    fetched = skipped = failed = 0
+    for i, (code, meta) in enumerate(registry.items(), 1):
+        jpath = os.path.join(DATA_DIR, f"{code}.json")
+        try:
+            if (not args.force) and os.path.exists(jpath):
+                existing[code] = _card_from_file(jpath, meta)     # 跳过：用旧 stats 重算卡片
+                skipped += 1
+            else:
+                payload = stats = None
+                for attempt in range(2):                          # 失败重试一次
+                    try:
+                        payload, stats = fetch_one(code, meta, args.start, args.end)
+                        break
+                    except Exception:
+                        if attempt == 0:
+                            time.sleep(1.2)
+                        else:
+                            raise
+                write_json(jpath, payload)
+                existing[code] = _card(payload, stats)
+                fetched += 1
+                print(f"[{i}/{total}] {code} {payload['name']}  n={stats['n']} ★{payload['star']} "
+                      f"{payload['difficulty']} | {payload['personality']}", flush=True)
+                time.sleep(0.25)                                  # 轻微限速，别把新浪打挂
+        except Exception as e:
+            failed += 1
+            print(f"[{i}/{total}] FAIL {code}: {e}", file=sys.stderr, flush=True)
+        if i % 25 == 0:
+            _flush_index(index_path, existing)                    # 增量保存，中断也不白干
+            print(f"  …进度 {i}/{total}  新拉{fetched} 跳过{skipped} 失败{failed}  index已保存", flush=True)
+
+    _flush_index(index_path, existing)
+    feat = sum(1 for c in existing.values() if c.get("featured"))
+    print(f"[done] index.json 现有 {len(existing)} 张卡片（精选 {feat}）"
+          f"  本次新拉{fetched} 跳过{skipped} 失败{failed}")
 
 
 if __name__ == "__main__":
